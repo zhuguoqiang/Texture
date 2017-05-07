@@ -57,6 +57,7 @@ static NSString *ASTextNodeTruncationTokenAttributeName = @"ASTextNodeTruncation
 @interface ASTextNodeRendererKey : NSObject
 @property (assign, nonatomic) ASTextKitAttributes attributes;
 @property (assign, nonatomic) CGSize constrainedSize;
+@property (strong, nonatomic) UIColor *backgroundColor;
 @end
 
 @implementation ASTextNodeRendererKey
@@ -66,9 +67,11 @@ static NSString *ASTextNodeTruncationTokenAttributeName = @"ASTextNodeTruncation
   struct {
     size_t attributesHash;
     CGSize constrainedSize;
+    UIColor *backgroundColor;
   } data = {
     _attributes.hash(),
-    _constrainedSize
+    _constrainedSize,
+    _backgroundColor
   };
   return ASHashBytes(&data, sizeof(data));
 }
@@ -78,8 +81,14 @@ static NSString *ASTextNodeTruncationTokenAttributeName = @"ASTextNodeTruncation
   if (self == object) {
     return YES;
   }
+    
+  if (![object isKindOfClass:[self class]]) {
+    return NO;
+  }
   
-  return _attributes == object.attributes && CGSizeEqualToSize(_constrainedSize, object.constrainedSize);
+  return _attributes == object.attributes
+    && CGSizeEqualToSize(_constrainedSize, object.constrainedSize)
+    && ASObjectIsEqual(_backgroundColor, object.backgroundColor);
 }
 
 @end
@@ -101,13 +110,14 @@ static NSCache *sharedRendererCache()
  we maintain a LRU renderer cache that is queried via a unique key based on text kit attributes and constrained size. 
  */
 
-static ASTextKitRenderer *rendererForAttributes(ASTextKitAttributes attributes, CGSize constrainedSize)
+static ASTextKitRenderer *rendererForAttributes(ASTextKitAttributes attributes, CGSize constrainedSize, UIColor *backgroundColor)
 {
   NSCache *cache = sharedRendererCache();
   
   ASTextNodeRendererKey *key = [[ASTextNodeRendererKey alloc] init];
   key.attributes = attributes;
   key.constrainedSize = constrainedSize;
+  key.backgroundColor = backgroundColor;
 
   ASTextKitRenderer *renderer = [cache objectForKey:key];
   if (renderer == nil) {
@@ -118,38 +128,38 @@ static ASTextKitRenderer *rendererForAttributes(ASTextKitAttributes attributes, 
   return renderer;
 }
 
-#pragma mark - ASTextNodeDrawParameter
-
-@interface ASTextNodeDrawParameter : NSObject {
-@package
-  ASTextKitAttributes _rendererAttributes;
-  UIColor *_backgroundColor;
-  UIEdgeInsets _textContainerInsets;
-}
-@end
-
-@implementation ASTextNodeDrawParameter
-
-- (instancetype)initWithRendererAttributes:(ASTextKitAttributes)rendererAttributes
-                           backgroundColor:(/*nullable*/ UIColor *)backgroundColor
-                       textContainerInsets:(UIEdgeInsets)textContainerInsets
-{
-  self = [super init];
-  if (self != nil) {
-    _rendererAttributes = rendererAttributes;
-    _backgroundColor = backgroundColor;
-    _textContainerInsets = textContainerInsets;
-  }
-  return self;
-}
-
-- (ASTextKitRenderer *)rendererForBounds:(CGRect)bounds
-{
-  CGRect rect = UIEdgeInsetsInsetRect(bounds, _textContainerInsets);
-  return rendererForAttributes(_rendererAttributes, rect.size);
-}
-
-@end
+//#pragma mark - ASTextNodeDrawParameter
+//
+//@interface ASTextNodeDrawParameter : NSObject {
+//@package
+//  ASTextKitAttributes _rendererAttributes;
+//  UIColor *_backgroundColor;
+//  UIEdgeInsets _textContainerInsets;
+//}
+//@end
+//
+//@implementation ASTextNodeDrawParameter
+//
+//- (instancetype)initWithRendererAttributes:(ASTextKitAttributes)rendererAttributes
+//                           backgroundColor:(/*nullable*/ UIColor *)backgroundColor
+//                       textContainerInsets:(UIEdgeInsets)textContainerInsets
+//{
+//  self = [super init];
+//  if (self != nil) {
+//    _rendererAttributes = rendererAttributes;
+//    _backgroundColor = backgroundColor;
+//    _textContainerInsets = textContainerInsets;
+//  }
+//  return self;
+//}
+//
+//- (ASTextKitRenderer *)rendererForBounds:(CGRect)bounds
+//{
+//  CGRect rect = UIEdgeInsetsInsetRect(bounds, _textContainerInsets);
+//  return rendererForAttributes(_rendererAttributes, rect.size, _backgroundColor);
+//}
+//
+//@end
 
 
 #pragma mark - ASTextNode
@@ -318,7 +328,9 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
 - (ASTextKitRenderer *)_rendererWithBounds:(CGRect)bounds
 {
   ASDN::MutexLocker l(__instanceLock__);
-  return [self _locked_rendererWithBounds:bounds];
+  bounds.size.width -= (_textContainerInset.left + _textContainerInset.right);
+  bounds.size.height -= (_textContainerInset.top + _textContainerInset.bottom);
+  return rendererForAttributes([self _locked_rendererAttributes], bounds.size, self.threadSafeBackgroundColor);
 }
 
 - (ASTextKitRenderer *)_locked_renderer
@@ -329,7 +341,7 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
 - (ASTextKitRenderer *)_locked_rendererWithBounds:(CGRect)bounds
 {
   bounds = UIEdgeInsetsInsetRect(bounds, _textContainerInset);
-  return rendererForAttributes([self _locked_rendererAttributes], bounds.size);
+  return rendererForAttributes([self _locked_rendererAttributes], bounds.size, self.threadSafeBackgroundColor);
 }
 
 - (ASTextKitAttributes)_locked_rendererAttributes
@@ -494,26 +506,37 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
 
 #pragma mark - Drawing
 
+static NSString * const ASTextNodeDrawParameterConstrainedSize = @"constrainedSize";
+
 - (NSObject *)drawParametersForAsyncLayer:(_ASDisplayLayer *)layer
 {
   ASDN::MutexLocker l(__instanceLock__);
+
+  // Figure out some cache key
+  ASTextNodeRendererKey *key = [[ASTextNodeRendererKey alloc] init];
+  key.attributes = [self _locked_rendererAttributes];
+  key.constrainedSize = self.threadSafeBounds.size;
+  key.backgroundColor = self.threadSafeBackgroundColor;
   
-  return [[ASTextNodeDrawParameter alloc] initWithRendererAttributes:[self _locked_rendererAttributes]
-                                                     backgroundColor:self.backgroundColor
-                                                 textContainerInsets:_textContainerInset];
+  return @{
+    ASDisplayLayerDrawParameterCacheKey: key,
+    ASTextNodeDrawParameterConstrainedSize : [NSValue valueWithUIEdgeInsets:_textContainerInset]
+  };
 }
 
 + (void)drawRect:(CGRect)bounds withParameters:(id)parameters isCancelled:(asdisplaynode_iscancelled_block_t)isCancelledBlock isRasterizing:(BOOL)isRasterizing
 {
-  ASTextNodeDrawParameter *drawParameter = (ASTextNodeDrawParameter *)parameters;
-  UIColor *backgroundColor = (isRasterizing || drawParameter == nil) ? nil : drawParameter->_backgroundColor;
-  UIEdgeInsets textContainerInsets = drawParameter ? drawParameter->_textContainerInsets : UIEdgeInsetsZero;
-  ASTextKitRenderer *renderer = [drawParameter rendererForBounds:bounds];
+  ASTextNodeRendererKey *key = parameters[ASDisplayLayerDrawParameterCacheKey];
+  UIColor *backgroundColor = isRasterizing ? nil : key.backgroundColor;
+  UIEdgeInsets textContainerInsets = [parameters[ASTextNodeDrawParameterConstrainedSize] UIEdgeInsetsValue];
+  CGSize constrainedSize = UIEdgeInsetsInsetRect(bounds, textContainerInsets).size;
+  ASTextKitRenderer *renderer = rendererForAttributes(key.attributes, constrainedSize, backgroundColor);  
   
   CGContextRef context = UIGraphicsGetCurrentContext();
   ASDisplayNodeAssert(context, @"This is no good without a context.");
  
   CGContextSaveGState(context);
+  
   CGContextTranslateCTM(context, textContainerInsets.left, textContainerInsets.top);
   
   // Fill background
@@ -524,6 +547,7 @@ static NSArray *DefaultLinkAttributeNames = @[ NSLinkAttributeName ];
   
   // Draw text
   [renderer drawInContext:context bounds:bounds];
+  
   CGContextRestoreGState(context);
 }
 

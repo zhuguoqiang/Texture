@@ -299,6 +299,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable UIImage *)displayWithParameters:(nullable id)parameters
                                 isCancelled:(AS_NOESCAPE asdisplaynode_iscancelled_block_t)isCancelledBlock;
 
+// If a parameter cache key is provided it can be used for contents caching. It needs to comply to <NSCopying>
+extern NSString* const ASDisplayLayerDrawParameterCacheKey;
+
 /**
  * @abstract Delegate override for drawParameters
  *
@@ -306,7 +309,7 @@ NS_ASSUME_NONNULL_BEGIN
  *
  * @note Called on the main thread only
  */
-- (nullable id<NSObject>)drawParametersForAsyncLayer:(_ASDisplayLayer *)layer;
+- (nullable NSObject *)drawParametersForAsyncLayer:(_ASDisplayLayer *)layer;
 
 /**
  * @abstract Indicates that the receiver is about to display.

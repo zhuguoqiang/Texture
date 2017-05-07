@@ -125,7 +125,10 @@ __unused static NSString * _Nonnull NSStringFromASHierarchyState(ASHierarchyStat
 @property (nonatomic, assign) CGRect threadSafeBounds;
 
 // Returns the bounds of the node without reaching the view or layer
-- (CGRect)_locked_threadSafeBounds;
+@property (nonatomic, assign, readonly) CGRect _locked_threadSafeBounds;
+
+// Thread safe way to access the background color of a node
+@property (nullable, nonatomic, strong) UIColor *threadSafeBackgroundColor;
 
 // delegate to inform of ASInterfaceState changes (used by ASNodeController)
 @property (nonatomic, weak) id<ASInterfaceStateDelegate> interfaceStateDelegate;

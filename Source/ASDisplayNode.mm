@@ -80,6 +80,7 @@ NSInteger const ASDefaultDrawingPriority = ASDefaultTransactionPriority;
 
 @synthesize debugName = _debugName;
 @synthesize threadSafeBounds = _threadSafeBounds;
+@synthesize threadSafeBackgroundColor = _threadSafeBackgroundColor;
 @synthesize layoutSpecBlock = _layoutSpecBlock;
 
 static BOOL suppressesInvalidCollectionUpdateExceptions = NO;
@@ -116,6 +117,8 @@ _ASPendingState *ASDisplayNodeGetPendingState(ASDisplayNode *node)
   }
   return result;
 }
+
+NSString * const ASDisplayLayerDrawParameterCacheKey = @"ASDisplayLayerDrawParameterCacheKey";
 
 /**
  *  Returns ASDisplayNodeFlags for the given class/instance. instance MAY BE NIL.
@@ -835,13 +838,25 @@ static ASDisplayNodeMethodOverrides GetASDisplayNodeMethodOverrides(Class c)
 
 - (CGRect)_locked_threadSafeBounds
 {
-  return _threadSafeBounds;
+  return _threadSafeBounds; 
 }
 
 - (void)setThreadSafeBounds:(CGRect)newBounds
 {
   ASDN::MutexLocker l(__instanceLock__);
   _threadSafeBounds = newBounds;
+}
+
+- (void)setThreadSafeBackgroundColor:(UIColor *)color
+{
+  ASDN::MutexLocker l(__instanceLock__);
+  _threadSafeBackgroundColor = color;
+}
+
+- (UIColor *)threadSafeBackgroundColor
+{
+  ASDN::MutexLocker l(__instanceLock__);
+  return _threadSafeBackgroundColor;
 }
 
 - (void)nodeViewDidAddGestureRecognizer
@@ -3647,6 +3662,9 @@ ASDISPLAYNODE_INLINE BOOL subtreeIsRasterized(ASDisplayNode *node) {
     // No-op if these haven't been created yet, as that guarantees they don't have contents that needs to be released.
     _layer.contents = nil;
   }
+  
+  // Clear weak cache entry
+  _weakCacheEntry = nil;
   
   _placeholderLayer.contents = nil;
   _placeholderImage = nil;

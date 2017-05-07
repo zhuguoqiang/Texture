@@ -46,7 +46,7 @@
   }
 }
 
-- (nullable id<NSObject>)drawParametersForAsyncLayer:(_ASDisplayLayer *)layer
+- (NSObject *)drawParametersForAsyncLayer:(_ASDisplayLayer *)layer
 {
   return @{
     @"buttonType" : [NSNumber numberWithInt:_buttonType],

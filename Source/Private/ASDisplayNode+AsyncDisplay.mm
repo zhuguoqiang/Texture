@@ -22,6 +22,21 @@
 #import <AsyncDisplayKit/ASDisplayNodeInternal.h>
 #import <AsyncDisplayKit/ASDisplayNode+FrameworkSubclasses.h>
 #import <AsyncDisplayKit/ASInternalHelpers.h>
+#import <AsyncDisplayKit/ASWeakMap.h>
+
+/**
+ * Central cache for ASDisplayNode classes to support a general way to cache node contents
+ */
+static ASWeakMap *ASDisplayNodeContensCache() {
+  static ASWeakMap *cache;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    cache = [ASWeakMap new];
+  });
+  return cache;
+}
+
+#pragma mark - ASDisplayNode (AsyncDisplay)
 
 @interface ASDisplayNode () <_ASDisplayLayerDelegate>
 @end
@@ -226,6 +241,23 @@
   } else {
     displayBlock = ^id{
       CHECK_CANCELLED_AND_RETURN_NIL();
+        
+      // Check in cache if entry already exists
+      id contentsCacheKey = nil;
+      
+      // TODO: Better way to figure out if the drawParameter supports getting the cache
+      if ([drawParameters isKindOfClass:[NSDictionary class]]) {
+        contentsCacheKey = drawParameters[ASDisplayLayerDrawParameterCacheKey];
+        if (contentsCacheKey != nil) {
+          ASWeakMapEntry *content = [ASDisplayNodeContensCache() entryForKey:contentsCacheKey];
+          if (content != nil) {
+            NSLog(@"Cache Hit");
+            CHECK_CANCELLED_AND_RETURN_NIL();
+            ASDN_DELAY_FOR_DISPLAY();
+            return content.value;
+          }
+        }
+      }
 
       if (shouldCreateGraphicsContext) {
         UIGraphicsBeginImageContextWithOptions(bounds.size, opaque, contentsScaleForDisplay);
@@ -251,9 +283,11 @@
         willDisplayNodeContentWithRenderingContext(currentContext, drawParameters);
       }
       
-      if (usesImageDisplay) {                                   // If we are using a display method, we'll get an image back directly.
+      if (usesImageDisplay) {
+        // If we are using a display method, we'll get an image back directly.
         image = [self.class displayWithParameters:drawParameters isCancelled:isCancelledBlock];
-      } else if (usesDrawRect) {                                // If we're using a draw method, this will operate on the currentContext.
+      } else if (usesDrawRect) {
+        // If we're using a draw method, this will operate on the currentContext.
         [self.class drawRect:bounds withParameters:drawParameters isCancelled:isCancelledBlock isRasterizing:rasterizing];
       }
       
@@ -265,6 +299,10 @@
         CHECK_CANCELLED_AND_RETURN_NIL( UIGraphicsEndImageContext(); );
         image = UIGraphicsGetImageFromCurrentImageContext();
         UIGraphicsEndImageContext();
+      }
+      
+      if (contentsCacheKey != nil) {
+        _weakCacheEntry = [ASDisplayNodeContensCache() setObject:image forKey:contentsCacheKey];
       }
 
       ASDN_DELAY_FOR_DISPLAY();
