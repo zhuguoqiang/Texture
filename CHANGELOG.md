@@ -29,3 +29,4 @@
 - [Fix] Fixed a bug where ASVideoNodeDelegate error reporting callback would crash an app because of not responding to selector. [Sergey Petrachkov](https://github.com/Petrachkov) [#291](https://github.com/TextureGroup/Texture/issues/291)
 - [IGListKit] Add IGListKit headers to public section of Xcode project [Michael Schneider] (https://github.com/maicki)[#286](https://github.com/TextureGroup/Texture/pull/286)
 - [Layout] Ensure -layout and -layoutDidFinish are called only if a node is loaded. [Huy Nguyen](https://github.com/nguyenhuy) [#285](https://github.com/TextureGroup/Texture/pull/285)
+- [ASTextNode] Fix a bug where ASTextNode with textInsets set would not correctly handle link taps. [Sergey Petrachkov](https://github.com/Petrachkov) [#255](https://github.com/TextureGroup/Texture/issues/255)
